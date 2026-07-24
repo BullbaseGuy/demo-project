@@ -51,10 +51,37 @@ def test_secret_failure_is_blocked() -> None:
     assert result.action == "SECURITY_BLOCKED"
 
 
+def test_candidate_scope_failure_is_security_blocked() -> None:
+    result = classify(
+        source_workflow="Devflow Product Gate",
+        source_run_id=3,
+        conclusion="failure",
+        run_attempt=1,
+        jobs_payload=jobs(
+            "Check candidate scope from merge base"
+        ),
+    )
+    assert result.action == "SECURITY_BLOCKED"
+
+
+def test_merge_boundary_requires_human() -> None:
+    result = classify(
+        source_workflow="Devflow Product Gate",
+        source_run_id=4,
+        conclusion="failure",
+        run_attempt=1,
+        jobs_payload=jobs(
+            "Merge exact reviewed candidate without executing it"
+        ),
+    )
+    assert result.action == "HUMAN_REQUIRED"
+    assert result.reason_code == "MERGE_BOUNDARY_BLOCKED"
+
+
 def test_model_failure_never_retries() -> None:
     result = classify(
         source_workflow="Codex Candidate Review",
-        source_run_id=3,
+        source_run_id=5,
         conclusion="failure",
         run_attempt=1,
         jobs_payload=jobs(
