@@ -32,9 +32,9 @@ jobs:
           printf '%s' "$PAYLOAD_JSON" > /tmp/notification.json
           python - <<'PY' > /tmp/issue-values.json
           import json
-          from pathlib import Path
+          from pathlib import Path, PurePosixPath
 
-          payload = json.loads(Path('/tmp/notification.json').read_text())
+          payload = json.loads(Path('/tmp/notification.json').read_text(encoding='utf-8'))
           allowed = {'COMPLETED', 'HUMAN_REQUIRED', 'SECURITY_BLOCKED', 'INTERRUPTED'}
           kind = payload.get('notification_type')
           if kind not in allowed:
@@ -51,33 +51,74 @@ jobs:
           for key in required:
               if payload.get(key) in (None, ''):
                   raise SystemExit(f'missing notification field: {key}')
-          index = json.loads(Path('docs/implementation/ACTIVE_TASKS.yaml').read_text())
-          match = next(
-              (
-                  item
-                  for item in index.get('tasks', [])
-                  if item.get('task_id') == payload['task_id']
-              ),
-              None,
+
+          config = json.loads(Path('.devflow/project.json').read_text(encoding='utf-8'))
+          index = json.loads(
+              Path('docs/implementation/ACTIVE_TASKS.yaml').read_text(encoding='utf-8')
           )
-          if not match:
-              raise SystemExit('task is not indexed')
-          state = json.loads(Path(match['state_path']).read_text())
-          issue = state.get('notification', {}).get('control_issue_number')
-          if not isinstance(issue, int) or isinstance(issue, bool) or issue <= 0:
-              raise SystemExit('canonical control Issue is missing')
-          config = json.loads(Path('.devflow/project.json').read_text())
+          matches = [
+              item
+              for item in index.get('tasks', [])
+              if isinstance(item, dict)
+              and item.get('task_id') == payload['task_id']
+          ]
+          issue = None
+          recovery_record = 'docs/process/runbooks/handle-incident.md'
+          repository_scope = True
+          if len(matches) == 1:
+              state_path = matches[0].get('state_path')
+              if not isinstance(state_path, str):
+                  raise SystemExit('indexed task state_path is missing')
+              relative = PurePosixPath(state_path)
+              if (
+                  relative.is_absolute()
+                  or '..' in relative.parts
+                  or relative.parts[:2] != ('docs', 'implementation')
+                  or relative.name != 'task_state.yaml'
+              ):
+                  raise SystemExit('indexed task state_path is unsafe')
+              state = json.loads(Path(*relative.parts).read_text(encoding='utf-8'))
+              issue = state.get('notification', {}).get('control_issue_number')
+              if not isinstance(issue, int) or isinstance(issue, bool) or issue <= 0:
+                  raise SystemExit('canonical control Issue is missing')
+              recovery_record = str(relative.parent / 'HANDOFF.md')
+              repository_scope = False
+          elif len(matches) > 1:
+              raise SystemExit('task_id is duplicated in ACTIVE_TASKS')
+
           print(
               json.dumps(
                   {
                       'issue': issue,
+                      'repository_scope': repository_scope,
                       'mentions': config['project']['notification_mentions'],
+                      'recovery_record': recovery_record,
                       'payload': payload,
                   }
               )
           )
           PY
-          ISSUE_NUMBER="$(jq -r '.issue' /tmp/issue-values.json)"
+
+          REPOSITORY_SCOPE="$(jq -r '.repository_scope' /tmp/issue-values.json)"
+          ISSUE_NUMBER="$(jq -r '.issue // empty' /tmp/issue-values.json)"
+          if [[ "$REPOSITORY_SCOPE" == "true" ]]; then
+            CONTROL_TITLE="[DEVFLOW CONTROL] Repository automation"
+            ISSUE_NUMBER="$(
+              gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 100 \
+                --json number,title \
+                --jq ".[] | select(.title == \"${CONTROL_TITLE}\") | .number" \
+                | head -n 1
+            )"
+            if [[ -z "$ISSUE_NUMBER" ]]; then
+              ISSUE_URL="$(
+                gh issue create --repo "$GITHUB_REPOSITORY" \
+                  --title "$CONTROL_TITLE" \
+                  --body "Canonical repository-level automation incidents are recorded here."
+              )"
+              ISSUE_NUMBER="${ISSUE_URL##*/}"
+            fi
+          fi
+
           TYPE="$(jq -r '.payload.notification_type' /tmp/issue-values.json)"
           FINGERPRINT="$(jq -r '.payload.fingerprint' /tmp/issue-values.json)"
           MARKER="devflow-root:${FINGERPRINT}:${TYPE}"
@@ -86,6 +127,15 @@ jobs:
             --jq '.[].body' | grep -Fq "$MARKER"; then
             exit 0
           fi
+
+          ISSUE_STATE="$(
+            gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json state --jq '.state'
+          )"
+          if [[ "$ISSUE_STATE" == "CLOSED" && "$TYPE" != "COMPLETED" ]]; then
+            gh issue reopen "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY"
+          fi
+
           MENTIONS="$(jq -r '.mentions | map("@" + .) | join(" ")' /tmp/issue-values.json)"
           TASK_ID="$(jq -r '.payload.task_id' /tmp/issue-values.json)"
           REASON_CODE="$(jq -r '.payload.reason_code' /tmp/issue-values.json)"
@@ -93,6 +143,11 @@ jobs:
           MINIMUM_ACTION="$(jq -r '.payload.minimum_action' /tmp/issue-values.json)"
           SOURCE_WORKFLOW="$(jq -r '.payload.source_workflow' /tmp/issue-values.json)"
           SOURCE_RUN="$(jq -r '.payload.source_run_id' /tmp/issue-values.json)"
+          FAILURE_STEPS="$(
+            jq -r '(.payload.failure_steps // []) | if length == 0 then "none" else join(", ") end' \
+              /tmp/issue-values.json
+          )"
+          RECOVERY_RECORD="$(jq -r '.recovery_record' /tmp/issue-values.json)"
           BODY=$(cat <<EOF
           ${MENTIONS}
 
@@ -102,14 +157,15 @@ jobs:
           - Workflow: \`${SOURCE_WORKFLOW}\`
           - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN}
           - Classification: \`${REASON_CODE}\`
+          - Failed steps: ${FAILURE_STEPS}
           - Reason: ${REASON}
           - Minimum action: ${MINIMUM_ACTION}
-          - Recovery record: \`docs/implementation/${TASK_ID}/HANDOFF.md\`
+          - Recovery record: \`${RECOVERY_RECORD}\`
 
           \`/ack\` confirms receipt only. <!-- ${MARKER} -->
           EOF
           )
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$BODY"
-          if [[ "$TYPE" == "COMPLETED" ]]; then
+          if [[ "$TYPE" == "COMPLETED" && "$REPOSITORY_SCOPE" != "true" ]]; then
             gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
           fi
