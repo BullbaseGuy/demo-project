@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "devflow-targeted": [
+      [
+        "python",
+        "-m",
+        "compileall",
+        "-q",
+        "scripts/devflow"
+      ],
+      [
+        "python",
+        "scripts/devflow/validate_docs.py"
+      ],
+      [
+        "python",
+        "scripts/devflow/validate_workflows.py"
+      ],
+      [
+        "ruff",
+        "check",
+        "scripts/devflow",
+        "tests"
+      ],
+      [
+        "pytest",
+        "-q",
+        "tests"
+      ]
+    ],
+    "repository-full": [
+      [
+        "python",
+        "-m",
+        "compileall",
+        "-q",
+        "scripts"
+      ],
+      [
+        "ruff",
+        "check",
+        "scripts",
+        "tests"
+      ],
+      [
+        "pytest",
+        "-q",
+        "tests"
+      ]
+    ],
+    "post-merge": [
+      [
+        "python",
+        "scripts/devflow/validate_state.py",
+        "--all-active",
+        "--no-git"
+      ],
+      [
+        "python",
+        "scripts/devflow/validate_docs.py"
+      ],
+      [
+        "python",
+        "scripts/devflow/validate_workflows.py"
+      ],
+      [
+        "pytest",
+        "-q",
+        "tests"
+      ]
+    ],
+    "agent-targeted": [
+      [
+        "python",
+        "-m",
+        "compileall",
+        "-q",
+        "scripts/devflow"
+      ],
+      [
+        "pytest",
+        "-q",
+        "tests/test_devflow_descriptor.py",
+        "tests/test_devflow_state.py"
+      ]
+    ]
+  }
+}
