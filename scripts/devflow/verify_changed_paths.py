@@ -42,7 +42,8 @@ def verify(
     violations = []
     for path in sorted(set(paths)):
         if any(
-            fnmatch.fnmatch(path, pattern)
+            path == pattern
+            or fnmatch.fnmatch(path, pattern)
             for pattern in forbidden
         ):
             violations.append(
@@ -107,14 +108,35 @@ def main() -> int:
         args.task_file,
         config_root,
     )
+    changed = git_changed_files(
+        args.base,
+        args.head,
+        repo_root,
+    )
     result = verify(
-        git_changed_files(
-            args.base,
-            args.head,
-            repo_root,
-        ),
+        changed,
         task.allowed_files,
         task.forbidden_patterns,
+    )
+    violations = result["violations"]
+    if not changed:
+        violations.append(
+            {
+                "path": None,
+                "reason": "NO_CHANGED_FILES",
+            }
+        )
+    if task.auto_merge and len(changed) > 5:
+        violations.append(
+            {
+                "path": None,
+                "reason": "AUTO_MERGE_FILE_LIMIT_EXCEEDED",
+            }
+        )
+    result["status"] = (
+        "PASS"
+        if not violations
+        else "FAIL"
     )
     args.output.parent.mkdir(
         parents=True,
