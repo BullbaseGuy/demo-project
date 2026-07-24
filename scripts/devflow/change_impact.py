@@ -86,6 +86,7 @@ def classify_paths(
 def changed_files(
     base: str,
     head: str,
+    repo_root: Path = Path("."),
 ) -> list[str]:
     output = subprocess.check_output(
         [
@@ -97,6 +98,7 @@ def changed_files(
             base,
             head,
         ],
+        cwd=repo_root,
         text=True,
     )
     return [
