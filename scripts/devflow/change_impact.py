@@ -91,8 +91,9 @@ def changed_files(
         [
             "git",
             "diff",
+            "--no-renames",
             "--name-only",
-            "--diff-filter=ACMR",
+            "--diff-filter=ACMRTD",
             base,
             head,
         ],
