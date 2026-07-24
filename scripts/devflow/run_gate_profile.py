@@ -24,10 +24,12 @@ def utc_now() -> str:
 def run_command(
     command: list[str],
     heartbeat_seconds: int,
+    workdir: Path,
 ) -> tuple[int, float]:
     started = time.monotonic()
     process = subprocess.Popen(
         command,
+        cwd=workdir,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -60,12 +62,9 @@ def run_command(
             last_output = time.monotonic()
         if (
             process.poll() is None
-            and time.monotonic() - last_output
-            >= heartbeat_seconds
+            and time.monotonic() - last_output >= heartbeat_seconds
         ):
-            elapsed = int(
-                time.monotonic() - started
-            )
+            elapsed = int(time.monotonic() - started)
             print(
                 f"[heartbeat] utc={utc_now()} "
                 f"elapsed_seconds={elapsed}",
@@ -82,11 +81,19 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("profile")
     parser.add_argument(
+        "--config-root",
+        type=Path,
+        default=Path("."),
+    )
+    parser.add_argument(
+        "--workdir",
+        type=Path,
+        default=Path("."),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
-        default=Path(
-            "devflow-gate-result.json"
-        ),
+        default=Path("devflow-gate-result.json"),
     )
     parser.add_argument(
         "--heartbeat-seconds",
@@ -99,18 +106,32 @@ def main() -> int:
             "heartbeat must be at least five seconds"
         )
 
-    commands = get_gate_profile(args.profile)
+    config_root = args.config_root.resolve()
+    workdir = args.workdir.resolve()
+    if not config_root.is_dir():
+        raise SystemExit(
+            f"config root does not exist: {config_root}"
+        )
+    if not workdir.is_dir():
+        raise SystemExit(
+            f"workdir does not exist: {workdir}"
+        )
+
+    commands = get_gate_profile(
+        args.profile,
+        config_root,
+    )
     results = []
     overall = 0
     for command in commands:
         print(
-            f"[gate:{args.profile}] "
-            f"running: {command}",
+            f"[gate:{args.profile}] running: {command}",
             flush=True,
         )
         code, elapsed = run_command(
             command,
             args.heartbeat_seconds,
+            workdir,
         )
         results.append(
             {
@@ -125,11 +146,9 @@ def main() -> int:
 
     summary = {
         "profile": args.profile,
-        "status": (
-            "PASS"
-            if overall == 0
-            else "FAIL"
-        ),
+        "status": "PASS" if overall == 0 else "FAIL",
+        "config_root": config_root.as_posix(),
+        "workdir": workdir.as_posix(),
         "commands": results,
         "completed_at_utc": utc_now(),
     }
@@ -147,8 +166,7 @@ def main() -> int:
         encoding="utf-8",
     )
     print(
-        f"GATE_PROFILE_STATUS="
-        f"{summary['status']}"
+        f"GATE_PROFILE_STATUS={summary['status']}"
     )
     return overall
 
