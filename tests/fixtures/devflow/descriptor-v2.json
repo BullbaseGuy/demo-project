@@ -11,9 +11,15 @@
   "forbidden_patterns": [
     ".github/**",
     ".devflow/**",
+    "AGENTS.md",
+    "**/AGENTS.md",
     "docs/process/**",
+    "docs/implementation/**",
+    "scripts/devflow/**",
     ".env",
-    "secrets/**"
+    ".env.*",
+    "secrets/**",
+    "migrations/**"
   ],
   "required_changes": [
     "replace-me"
