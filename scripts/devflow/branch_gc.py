@@ -67,6 +67,31 @@ def build_plan(
     }
 
 
+def active_task_branches(
+    index: dict[str, object],
+) -> set[str]:
+    result = set()
+    tasks = index.get("tasks", [])
+    if not isinstance(tasks, list):
+        raise ValueError(
+            "ACTIVE_TASKS.tasks must be an array"
+        )
+    for entry in tasks:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "DONE":
+            continue
+        for key in (
+            "branch",
+            "task_branch",
+            "publish_branch",
+        ):
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                result.add(value)
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -95,17 +120,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     index = load_json_yaml(args.active_tasks)
-    active = {
-        entry.get("branch")
-        for entry in index.get("tasks", [])
-        if (
-            isinstance(entry, dict)
-            and isinstance(
-                entry.get("branch"),
-                str,
-            )
-        )
-    }
+    active = active_task_branches(index)
     raw_prs = json.loads(
         args.open_prs.read_text(
             encoding="utf-8"
