@@ -12,7 +12,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   recover:
@@ -39,10 +39,14 @@ jobs:
         id: decision
         env:
           SOURCE_NAME: ${{ github.event.workflow_run.name }}
+          SOURCE_TITLE: ${{ github.event.workflow_run.display_title }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_PULL_REQUESTS: ${{ toJson(github.event.workflow_run.pull_requests) }}
           SOURCE_RUN: ${{ github.event.workflow_run.id }}
           SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           SOURCE_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
+          set -euo pipefail
           python scripts/devflow/recovery_policy.py \
             --source-workflow "$SOURCE_NAME" \
             --source-run-id "$SOURCE_RUN" \
@@ -52,8 +56,67 @@ jobs:
             --output /tmp/recovery.json
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import os
+          import re
           from pathlib import Path
-          value = json.loads(Path('/tmp/recovery.json').read_text())
+
+          value = json.loads(Path('/tmp/recovery.json').read_text(encoding='utf-8'))
+          index = json.loads(
+              Path('docs/implementation/ACTIVE_TASKS.yaml').read_text(encoding='utf-8')
+          )
+          tasks = [item for item in index.get('tasks', []) if isinstance(item, dict)]
+          task_id = None
+
+          title = os.environ.get('SOURCE_TITLE', '')
+          title_match = re.search(r'task=([A-Za-z0-9][A-Za-z0-9._-]{0,99})', title)
+          if title_match:
+              candidate = title_match.group(1)
+              if any(item.get('task_id') == candidate for item in tasks):
+                  task_id = candidate
+
+          if task_id is None:
+              try:
+                  pull_requests = json.loads(
+                      os.environ.get('SOURCE_PULL_REQUESTS', '[]') or '[]'
+                  )
+              except json.JSONDecodeError:
+                  pull_requests = []
+              numbers = {
+                  item.get('number')
+                  for item in pull_requests
+                  if isinstance(item, dict)
+                  and isinstance(item.get('number'), int)
+              }
+              matches = [
+                  item
+                  for item in tasks
+                  if item.get('pull_request') in numbers
+              ]
+              if len(matches) == 1:
+                  task_id = matches[0].get('task_id')
+
+          if task_id is None:
+              source_branch = os.environ.get('SOURCE_BRANCH', '')
+              matches = [
+                  item
+                  for item in tasks
+                  if source_branch
+                  in {
+                      item.get('branch'),
+                      item.get('task_branch'),
+                      item.get('publish_branch'),
+                  }
+              ]
+              if len(matches) == 1:
+                  task_id = matches[0].get('task_id')
+
+          value['task_id'] = task_id or '__repository__'
+          value['source_title'] = title
+          value['source_branch'] = os.environ.get('SOURCE_BRANCH', '')
+          Path('/tmp/recovery.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
           for key in ('action', 'notification_type'):
               raw = value.get(key)
               print(f"{key}={'' if raw is None else raw}")
@@ -65,6 +128,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN: ${{ github.event.workflow_run.id }}
         run: |
+          set -euo pipefail
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN}/rerun-failed-jobs"
           echo "AUTO_RECOVERY=INFRASTRUCTURE_ONLY" >> "$GITHUB_STEP_SUMMARY"
@@ -77,12 +141,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
-          value = json.loads(Path('/tmp/recovery.json').read_text())
+          value = json.loads(Path('/tmp/recovery.json').read_text(encoding='utf-8'))
           Path('/tmp/dispatch.json').write_text(
-              json.dumps({'event_type': 'devflow_notify', 'client_payload': value})
+              json.dumps({'event_type': 'devflow_notify', 'client_payload': value}),
+              encoding='utf-8',
           )
           PY
           gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
