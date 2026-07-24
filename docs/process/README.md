@@ -3,6 +3,9 @@
 This directory is the versioned, machine-validated process contract for the
 repository.
 
+For new-repository creation, first-time configuration and the complete workflow
+diagrams, read [`../USAGE.md`](../USAGE.md).
+
 ## Architecture
 
 ```text
@@ -13,9 +16,9 @@ GitHub Actions Executor
 Bounded zero-model recovery
 -> retry only verified ordinary infrastructure failures
 Product Gate
--> merge-base scope / full gate / optional reviewed merge
+-> trusted-control scope / targeted gate / full gate / isolated optional merge
 Post-Merge
--> exact merged commit verification
+-> exact merged commit verification / canonical finalization
 ```
 
 Codex is not part of the default execution chain. The repository policy remains
