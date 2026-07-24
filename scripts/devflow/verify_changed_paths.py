@@ -12,16 +12,19 @@ from task_descriptor import load_task_descriptor
 def git_changed_files(
     base: str,
     head: str,
+    repo_root: Path = Path("."),
 ) -> list[str]:
     output = subprocess.check_output(
         [
             "git",
             "diff",
+            "--no-renames",
             "--name-only",
-            "--diff-filter=ACMR",
+            "--diff-filter=ACMRTD",
             base,
             head,
         ],
+        cwd=repo_root,
         text=True,
     )
     return [
@@ -61,11 +64,7 @@ def verify(
                 }
             )
     return {
-        "status": (
-            "PASS"
-            if not violations
-            else "FAIL"
-        ),
+        "status": "PASS" if not violations else "FAIL",
         "changed_files": sorted(set(paths)),
         "violations": violations,
     }
@@ -77,6 +76,16 @@ def main() -> int:
         "--task-file",
         type=Path,
         required=True,
+    )
+    parser.add_argument(
+        "--config-root",
+        type=Path,
+        default=Path("."),
+    )
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path("."),
     )
     parser.add_argument(
         "--base",
@@ -92,14 +101,24 @@ def main() -> int:
         default=Path("scope-result.json"),
     )
     args = parser.parse_args()
-    task = load_task_descriptor(args.task_file)
+    config_root = args.config_root.resolve()
+    repo_root = args.repo_root.resolve()
+    task = load_task_descriptor(
+        args.task_file,
+        config_root,
+    )
     result = verify(
         git_changed_files(
             args.base,
             args.head,
+            repo_root,
         ),
         task.allowed_files,
         task.forbidden_patterns,
+    )
+    args.output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
     )
     args.output.write_text(
         json.dumps(
