@@ -3,8 +3,35 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
+import subprocess
 import urllib.parse
+from collections import Counter
 from pathlib import Path
+
+STATIC_PATTERNS = {
+    "PRIVATE_KEY": re.compile(
+        "-----BEGIN "
+        + r"(?:RSA |EC |OPENSSH |DSA )?"
+        + "PRIVATE KEY-----"
+    ),
+    "GITHUB_TOKEN": re.compile(
+        r"(?:"
+        + "gh"
+        + r"[pousr]_[A-Za-z0-9]{30,}|"
+        + "github"
+        + r"_pat_[A-Za-z0-9_]{50,})"
+    ),
+    "AWS_ACCESS_KEY": re.compile(
+        "AK" + r"IA[0-9A-Z]{16}"
+    ),
+    "API_KEY": re.compile(
+        "s" + r"k-[A-Za-z0-9_-]{24,}"
+    ),
+    "SLACK_TOKEN": re.compile(
+        "xo" + r"x[baprs]-[A-Za-z0-9-]{20,}"
+    ),
+}
 
 
 def secret_variants(value: str) -> set[str]:
@@ -17,6 +44,26 @@ def secret_variants(value: str) -> set[str]:
     }
 
 
+def tracked_files(root: Path) -> list[Path]:
+    try:
+        output = subprocess.check_output(
+            ["git", "ls-files", "-z"],
+            cwd=root,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return [
+            path
+            for path in root.rglob("*")
+            if path.is_file()
+            and ".git" not in path.parts
+        ]
+    return [
+        root / item.decode("utf-8")
+        for item in output.split(bytes([0]))
+        if item
+    ]
+
+
 def audit(
     root: Path,
     values: list[str],
@@ -27,32 +74,40 @@ def audit(
             variants.update(
                 secret_variants(value)
             )
-    matches = 0
+    matching_files = 0
     checked = 0
-    for path in root.rglob("*"):
-        if (
-            not path.is_file()
-            or ".git" in path.parts
-        ):
+    match_types: Counter[str] = Counter()
+    for path in tracked_files(root):
+        if not path.is_file():
             continue
         checked += 1
         text = path.read_text(
             encoding="utf-8",
             errors="ignore",
         )
+        found = set()
         if any(
             item and item in text
             for item in variants
         ):
-            matches += 1
+            found.add("EXPLICIT_VALUE")
+        for name, pattern in STATIC_PATTERNS.items():
+            if pattern.search(text):
+                found.add(name)
+        if found:
+            matching_files += 1
+            match_types.update(found)
     return {
         "status": (
             "PASS"
-            if matches == 0
+            if matching_files == 0
             else "FAIL"
         ),
         "checked_files": checked,
-        "matching_files": matches,
+        "matching_files": matching_files,
+        "match_type_counts": dict(
+            sorted(match_types.items())
+        ),
     }
 
 
