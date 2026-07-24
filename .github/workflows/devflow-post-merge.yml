@@ -1,0 +1,68 @@
+name: Devflow Post Merge
+
+on:
+  repository_dispatch:
+    types:
+      - devflow_post_merge
+  workflow_dispatch:
+    inputs:
+      task_id:
+        required: true
+        type: string
+      task_branch:
+        required: true
+        type: string
+      merge_sha:
+        required: true
+        type: string
+      post_merge_profile:
+        required: false
+        default: post-merge
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: devflow-post-merge-${{ github.event.client_payload.task_id || inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  exact-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.client_payload.merge_sha || inputs.merge_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: python -m pip install -e ".[dev]"
+
+      - name: Prove exact merge is contained in default branch
+        env:
+          MERGE_SHA: ${{ github.event.client_payload.merge_sha || inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          [[ "$(git rev-parse HEAD)" == "$MERGE_SHA" ]]
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$MERGE_SHA" "origin/${DEFAULT_BRANCH}"
+
+      - name: Run independent Post-Merge profile
+        run: |
+          python scripts/devflow/run_gate_profile.py \
+            "${{ github.event.client_payload.post_merge_profile || inputs.post_merge_profile }}"
+
+      - name: Record exact-merge pass
+        run: |
+          echo "EXACT_MERGE_POST_MERGE=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "No model session or paid probe was used." >> "$GITHUB_STEP_SUMMARY"

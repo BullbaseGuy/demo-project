@@ -1,0 +1,89 @@
+name: Devflow Auto Recovery
+
+on:
+  workflow_run:
+    workflows:
+      - Devflow Secret Audit
+      - Devflow State Consistency
+      - Devflow Product Gate
+      - Devflow Post Merge
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  recover:
+    if: github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Collect bounded source metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN}/jobs?filter=latest&per_page=100" \
+            > /tmp/source-jobs.json
+
+      - name: Classify before retry or notification
+        id: decision
+        env:
+          SOURCE_NAME: ${{ github.event.workflow_run.name }}
+          SOURCE_RUN: ${{ github.event.workflow_run.id }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SOURCE_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          python scripts/devflow/recovery_policy.py \
+            --source-workflow "$SOURCE_NAME" \
+            --source-run-id "$SOURCE_RUN" \
+            --conclusion "$SOURCE_CONCLUSION" \
+            --run-attempt "$SOURCE_ATTEMPT" \
+            --jobs-json /tmp/source-jobs.json \
+            --output /tmp/recovery.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          value = json.loads(Path('/tmp/recovery.json').read_text())
+          for key in ('action', 'notification_type'):
+              raw = value.get(key)
+              print(f"{key}={'' if raw is None else raw}")
+          PY
+
+      - name: Retry only verified ordinary infrastructure failures
+        if: steps.decision.outputs.action == 'RETRY'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN}/rerun-failed-jobs"
+          echo "AUTO_RECOVERY=INFRASTRUCTURE_ONLY" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch valuable terminal notification
+        if: >-
+          steps.decision.outputs.action == 'HUMAN_REQUIRED' ||
+          steps.decision.outputs.action == 'SECURITY_BLOCKED' ||
+          steps.decision.outputs.action == 'INTERRUPTED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path('/tmp/recovery.json').read_text())
+          Path('/tmp/dispatch.json').write_text(
+              json.dumps({'event_type': 'devflow_notify', 'client_payload': value})
+          )
+          PY
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+            --input /tmp/dispatch.json

@@ -1,0 +1,60 @@
+name: Codex Candidate Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_branch:
+        description: Data-only task branch containing the descriptor
+        required: true
+        type: string
+      task_commit_sha:
+        description: Exact reviewed task commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-candidate-review-${{ inputs.task_commit_sha }}
+  cancel-in-progress: false
+
+jobs:
+  review-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted control plane
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out data-only task branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.task_branch }}
+          path: workspace
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run zero-model candidate review
+        env:
+          EXPECTED_TASK_SHA: ${{ inputs.task_commit_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_TASK_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git -C workspace rev-parse HEAD)" == "$EXPECTED_TASK_SHA" ]]
+          test -f workspace/.agent/current_task.yaml
+          cd control
+          python scripts/devflow/codex_candidate_review.py \
+            --workspace-root ../workspace \
+            --task-file ../workspace/.agent/current_task.yaml \
+            --output /tmp/codex-candidate-review.json
+
+      - name: Record hard-disabled execution boundary
+        run: |
+          echo "CODEX_MODEL_INVOCATION=DISABLED" >> "$GITHUB_STEP_SUMMARY"
+          echo "Task branches are data-only." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Environment Secret or model session was started." >> "$GITHUB_STEP_SUMMARY"

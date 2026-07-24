@@ -1,0 +1,76 @@
+name: Devflow Branch Garbage Collection
+
+on:
+  repository_dispatch:
+    types:
+      - devflow_branch_gc
+  workflow_dispatch:
+    inputs:
+      task_branch:
+        required: true
+        type: string
+      publish_branch:
+        required: true
+        type: string
+      execute:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Collect open pull request heads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --jq '[.[][] | {head: .head.ref}]' > /tmp/open-prs.json
+
+      - name: Build deterministic cleanup plan
+        env:
+          TASK_BRANCH: ${{ github.event.client_payload.task_branch || inputs.task_branch }}
+          PUBLISH_BRANCH: ${{ github.event.client_payload.publish_branch || inputs.publish_branch }}
+          EXECUTE: ${{ github.event.client_payload.execute || inputs.execute }}
+        run: |
+          EXTRA=()
+          if [[ "$EXECUTE" == "true" ]]; then
+            EXTRA+=(--execute)
+          fi
+          python scripts/devflow/branch_gc.py \
+            --active-tasks docs/implementation/ACTIVE_TASKS.yaml \
+            --open-prs /tmp/open-prs.json \
+            --candidate "$TASK_BRANCH" \
+            --candidate "$PUBLISH_BRANCH" \
+            "${EXTRA[@]}"
+
+      - name: Delete only planner-approved branches
+        if: (github.event.client_payload.execute || inputs.execute) == true
+        run: |
+          if [[ "$(jq -r '.mode' branch-gc-plan.json)" != "EXECUTE" ]]; then
+            echo "Repository configuration keeps Branch GC in Dry Run."
+            exit 0
+          fi
+          jq -r '.deletable[]' branch-gc-plan.json | while read -r branch; do
+            [[ -n "$branch" ]] && git push origin --delete "$branch"
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: branch-gc-${{ github.run_id }}
+          path: branch-gc-plan.json
+          if-no-files-found: error
+          retention-days: 7

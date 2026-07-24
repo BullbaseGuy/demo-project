@@ -1,0 +1,115 @@
+name: Devflow Incident
+
+on:
+  repository_dispatch:
+    types:
+      - devflow_notify
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: devflow-task-control-${{ github.event.client_payload.task_id || github.event.client_payload.fingerprint }}
+  cancel-in-progress: false
+
+jobs:
+  valuable-notification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Validate and publish classified notification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAYLOAD_JSON: ${{ toJson(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PAYLOAD_JSON" > /tmp/notification.json
+          python - <<'PY' > /tmp/issue-values.json
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/notification.json').read_text())
+          allowed = {'COMPLETED', 'HUMAN_REQUIRED', 'SECURITY_BLOCKED', 'INTERRUPTED'}
+          kind = payload.get('notification_type')
+          if kind not in allowed:
+              raise SystemExit('notification is not valuable')
+          required = (
+              'task_id',
+              'reason_code',
+              'reason',
+              'minimum_action',
+              'fingerprint',
+              'source_workflow',
+              'source_run_id',
+          )
+          for key in required:
+              if payload.get(key) in (None, ''):
+                  raise SystemExit(f'missing notification field: {key}')
+          index = json.loads(Path('docs/implementation/ACTIVE_TASKS.yaml').read_text())
+          match = next(
+              (
+                  item
+                  for item in index.get('tasks', [])
+                  if item.get('task_id') == payload['task_id']
+              ),
+              None,
+          )
+          if not match:
+              raise SystemExit('task is not indexed')
+          state = json.loads(Path(match['state_path']).read_text())
+          issue = state.get('notification', {}).get('control_issue_number')
+          if not isinstance(issue, int) or isinstance(issue, bool) or issue <= 0:
+              raise SystemExit('canonical control Issue is missing')
+          config = json.loads(Path('.devflow/project.json').read_text())
+          print(
+              json.dumps(
+                  {
+                      'issue': issue,
+                      'mentions': config['project']['notification_mentions'],
+                      'payload': payload,
+                  }
+              )
+          )
+          PY
+          ISSUE_NUMBER="$(jq -r '.issue' /tmp/issue-values.json)"
+          TYPE="$(jq -r '.payload.notification_type' /tmp/issue-values.json)"
+          FINGERPRINT="$(jq -r '.payload.fingerprint' /tmp/issue-values.json)"
+          MARKER="devflow-root:${FINGERPRINT}:${TYPE}"
+          if gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments?per_page=100" \
+            --jq '.[].body' | grep -Fq "$MARKER"; then
+            exit 0
+          fi
+          MENTIONS="$(jq -r '.mentions | map("@" + .) | join(" ")' /tmp/issue-values.json)"
+          TASK_ID="$(jq -r '.payload.task_id' /tmp/issue-values.json)"
+          REASON_CODE="$(jq -r '.payload.reason_code' /tmp/issue-values.json)"
+          REASON="$(jq -r '.payload.reason' /tmp/issue-values.json)"
+          MINIMUM_ACTION="$(jq -r '.payload.minimum_action' /tmp/issue-values.json)"
+          SOURCE_WORKFLOW="$(jq -r '.payload.source_workflow' /tmp/issue-values.json)"
+          SOURCE_RUN="$(jq -r '.payload.source_run_id' /tmp/issue-values.json)"
+          BODY=$(cat <<EOF
+          ${MENTIONS}
+
+          [TASK][${TYPE}]
+
+          - Task: \`${TASK_ID}\`
+          - Workflow: \`${SOURCE_WORKFLOW}\`
+          - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN}
+          - Classification: \`${REASON_CODE}\`
+          - Reason: ${REASON}
+          - Minimum action: ${MINIMUM_ACTION}
+          - Recovery record: \`docs/implementation/${TASK_ID}/HANDOFF.md\`
+
+          \`/ack\` confirms receipt only. <!-- ${MARKER} -->
+          EOF
+          )
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          if [[ "$TYPE" == "COMPLETED" ]]; then
+            gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
