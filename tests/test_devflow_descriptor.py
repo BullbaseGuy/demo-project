@@ -52,3 +52,33 @@ def test_publish_prefix_is_enforced() -> None:
         match="publish prefix",
     ):
         TaskDescriptor.from_mapping(data)
+
+
+def test_unknown_field_fails_closed() -> None:
+    data = descriptor()
+    data["unexpected"] = True
+    with pytest.raises(
+        TaskDescriptorError,
+        match="unknown task descriptor field",
+    ):
+        TaskDescriptor.from_mapping(data)
+
+
+def test_path_traversal_is_rejected() -> None:
+    data = descriptor()
+    data["allowed_files"] = ["../outside.py"]
+    with pytest.raises(
+        TaskDescriptorError,
+        match="stay inside the repository",
+    ):
+        TaskDescriptor.from_mapping(data)
+
+
+def test_all_repository_protected_paths_are_required() -> None:
+    data = descriptor()
+    data["forbidden_patterns"] = [".github/**"]
+    with pytest.raises(
+        TaskDescriptorError,
+        match="must include repository protected paths",
+    ):
+        TaskDescriptor.from_mapping(data)
