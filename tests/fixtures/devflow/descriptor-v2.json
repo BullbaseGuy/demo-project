@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "task_id": "fixture",
+  "objective": "Validate fixture",
+  "base_branch": "main",
+  "publish_branch": "agent/replace-me",
+  "allowed_files": [
+    "path/to/file.py",
+    "tests/test_file.py"
+  ],
+  "forbidden_patterns": [
+    ".github/**",
+    ".devflow/**",
+    "AGENTS.md",
+    "**/AGENTS.md",
+    "docs/process/**",
+    "docs/implementation/**",
+    "scripts/devflow/**",
+    ".env",
+    ".env.*",
+    "secrets/**",
+    "migrations/**"
+  ],
+  "required_changes": [
+    "replace-me"
+  ],
+  "acceptance_notes": [
+    "keep the patch minimal"
+  ],
+  "gate_profile": "agent-targeted",
+  "full_gate_profile": "repository-full",
+  "post_merge_profile": "post-merge",
+  "context_budget": {
+    "max_allowed_files": 5,
+    "max_task_bytes": 32768,
+    "max_total_allowed_file_bytes": 262144,
+    "max_single_file_bytes": 131072,
+    "max_log_excerpt_lines": 300,
+    "include_chat_history": false,
+    "include_full_sop": false
+  },
+  "risk_class": "low",
+  "auto_merge": false,
+  "notify_completion": false,
+  "expected_base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "stop_conditions": [
+    "changed path outside allowed_files",
+    "secret audit match",
+    "business or architecture decision required",
+    "default branch changed and cannot be replayed safely"
+  ]
+}

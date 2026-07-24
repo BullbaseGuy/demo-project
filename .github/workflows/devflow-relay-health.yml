@@ -1,0 +1,42 @@
+name: Devflow Relay Health
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        required: true
+        default: configuration_only
+        options:
+          - configuration_only
+          - paid_responses_probe
+      confirmation:
+        required: false
+        type: string
+      purpose:
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  zero-request-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Enforce repository paid-probe policy
+        run: |
+          python scripts/devflow/relay_health.py \
+            --mode "${{ inputs.mode }}" \
+            --confirmation "${{ inputs.confirmation }}" \
+            --purpose "${{ inputs.purpose }}"
+
+      - name: Record zero requests
+        if: always()
+        run: |
+          echo "RESPONSES_REQUESTS_SENT=0" >> "$GITHUB_STEP_SUMMARY"
+          echo "This workflow is never automatically retried." >> "$GITHUB_STEP_SUMMARY"

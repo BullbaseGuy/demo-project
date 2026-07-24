@@ -12,3 +12,7 @@ venv/
 dist/
 build/
 *.egg-info/
+*.log
+devflow-*.json
+devflow-*.txt
+!tests/fixtures/**/*.json

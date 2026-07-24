@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "policy_mode": "disabled",
+  "allowed_entrypoints": [
+    {
+      "id": "manual_one_time_executor",
+      "workflow": ".github/workflows/codex-task.yml",
+      "current_mode": "eligibility_only",
+      "model_invocation": false
+    }
+  ],
+  "forbidden_automatic_model_patterns": [
+    "actions/workflows/codex-task.yml/dispatches",
+    "RETRY_CODEX",
+    "openai/codex-action@"
+  ],
+  "trusted_control": {
+    "control_ref": "exact_default_branch_sha",
+    "task_branch_data_only": true
+  },
+  "paid_probe_policy": {
+    "workflow": ".github/workflows/devflow-relay-health.yml",
+    "default_mode": "configuration_only",
+    "automatic_retry": false,
+    "maximum_requests_per_dispatch": 0
+  }
+}

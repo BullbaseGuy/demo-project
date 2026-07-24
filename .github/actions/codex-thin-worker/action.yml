@@ -1,0 +1,28 @@
+name: Codex Thin Worker
+description: Disabled-mode circuit breaker; never invokes a model in the default scaffold.
+
+inputs:
+  prompt-file:
+    description: Reviewed descriptor retained for a structured blocked result.
+    required: true
+
+outputs:
+  final-message:
+    description: Structured blocked result.
+    value: ${{ steps.policy.outputs.final-message }}
+
+runs:
+  using: composite
+  steps:
+    - id: policy
+      name: Stop before model invocation
+      shell: bash
+      run: |
+        set -euo pipefail
+        delimiter="CODEX_POLICY_RESULT_${RANDOM}_${RANDOM}"
+        {
+          echo "final-message<<${delimiter}"
+          echo '{"status":"BLOCKED","changed_files":[],"commands_run":[],"tests_passed":false,"summary":"Codex is disabled by repository policy.","blocking_reason":"CODEX_POLICY_DISABLED"}'
+          echo "${delimiter}"
+        } >> "$GITHUB_OUTPUT"
+        echo "CODEX_MODEL_INVOCATION=DISABLED" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "task_id": "replace-me",
+      "title": "replace-me",
+      "status": "RUNNING",
+      "branch": "feature/replace-me",
+      "task_branch": null,
+      "publish_branch": null,
+      "pull_request": null,
+      "current_stage": "W00",
+      "post_merge_profile": "post-merge",
+      "notify_completion": true,
+      "state_path": "docs/implementation/replace-me/task_state.yaml"
+    }
+  ]
+}

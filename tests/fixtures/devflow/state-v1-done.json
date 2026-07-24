@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "state_revision": 1,
+  "task_id": "legacy-done",
+  "title": "Legacy done",
+  "status": "DONE",
+  "execution_status": "COMPLETED",
+  "acceptance_status": "PASS",
+  "security_status": "PASS",
+  "working_branch": "main",
+  "pull_request": 1,
+  "base_sha_at_start": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "last_product_commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "last_state_commit_sha": null,
+  "current_stage": "W00",
+  "last_completed_stage": "W00",
+  "last_successful_step": "post_merge",
+  "next_action": "none",
+  "gate_results": {},
+  "retry_budget": {},
+  "human_gate": {
+    "required": false,
+    "reason": null,
+    "minimum_action": null,
+    "resume_from": null
+  },
+  "post_merge": {
+    "status": "PASS",
+    "merge_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "verified_run_ids": [
+      1
+    ]
+  },
+  "notification": {
+    "generation": 1,
+    "last_type": "COMPLETED",
+    "acknowledged": true,
+    "control_issue_number": 1
+  },
+  "updated_at_utc": "2026-01-01T00:00:00Z"
+}
