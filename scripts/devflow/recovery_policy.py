@@ -20,12 +20,15 @@ INFRA_MARKERS = (
     "checkout",
     "setup-python",
     "install development dependencies",
+    "install trusted devflow dependencies",
+    "install exact-merge development dependencies",
     "upload bounded diagnostics",
     "download artifact",
 )
 SECURITY_MARKERS = (
     "secret audit",
     "changed-path scope",
+    "candidate scope",
     "scope guard",
     "manifest",
 )
@@ -36,6 +39,7 @@ MODEL_MARKERS = (
 )
 MERGE_MARKERS = (
     "merge low-risk candidate",
+    "merge exact reviewed candidate",
     "merge boundary",
 )
 
@@ -216,6 +220,25 @@ def classify(
             **common,
         )
     if (
+        source_workflow
+        == config.workflows["product_gate"]
+        and contains(steps, MERGE_MARKERS)
+    ):
+        return decision(
+            action="HUMAN_REQUIRED",
+            reason_code="MERGE_BOUNDARY_BLOCKED",
+            reason=(
+                "A conflict, branch protection rule "
+                "or permission blocked the merge boundary."
+            ),
+            minimum_action=(
+                "Review the merge boundary without "
+                "bypassing protection."
+            ),
+            notification_type="HUMAN_REQUIRED",
+            **common,
+        )
+    if (
         conclusion in TERMINAL_INFRA_CONCLUSIONS
         or contains(steps, INFRA_MARKERS)
     ):
@@ -253,25 +276,6 @@ def classify(
                 "and permission state."
             ),
             notification_type="INTERRUPTED",
-            **common,
-        )
-    if (
-        source_workflow
-        == config.workflows["product_gate"]
-        and contains(steps, MERGE_MARKERS)
-    ):
-        return decision(
-            action="HUMAN_REQUIRED",
-            reason_code="MERGE_BOUNDARY_BLOCKED",
-            reason=(
-                "A conflict, branch protection rule "
-                "or permission blocked the merge boundary."
-            ),
-            minimum_action=(
-                "Review the merge boundary without "
-                "bypassing protection."
-            ),
-            notification_type="HUMAN_REQUIRED",
             **common,
         )
     if source_workflow in {
