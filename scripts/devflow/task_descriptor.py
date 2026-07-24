@@ -4,14 +4,36 @@ import fnmatch
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from config import ProjectConfig, load_gate_profiles, load_project_config
 from context_budget import ContextBudget, ContextBudgetError
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+REF_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 RISK_CLASSES = {"low", "medium", "high"}
+DESCRIPTOR_FIELDS = {
+    "schema_version",
+    "task_id",
+    "objective",
+    "base_branch",
+    "publish_branch",
+    "allowed_files",
+    "forbidden_patterns",
+    "required_changes",
+    "acceptance_notes",
+    "gate_profile",
+    "full_gate_profile",
+    "post_merge_profile",
+    "context_budget",
+    "risk_class",
+    "auto_merge",
+    "notify_completion",
+    "expected_base_sha",
+    "stop_conditions",
+}
 
 
 class TaskDescriptorError(ValueError):
@@ -49,6 +71,39 @@ def _strings(
     return tuple(item.strip() for item in value)
 
 
+def _valid_ref(value: str) -> bool:
+    return bool(
+        REF_RE.fullmatch(value)
+        and not value.startswith(("-", "/"))
+        and not value.endswith(("/", ".", ".lock"))
+        and ".." not in value
+        and "@{" not in value
+        and "//" not in value
+    )
+
+
+def _safe_repository_pattern(value: str, field: str) -> str:
+    if (
+        chr(0) in value
+        or "\n" in value
+        or "\r" in value
+        or "\\" in value
+    ):
+        raise TaskDescriptorError(
+            f"{field} contains unsafe path bytes"
+        )
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise TaskDescriptorError(
+            f"{field} must stay inside the repository"
+        )
+    if value.startswith("./") or value.startswith("-"):
+        raise TaskDescriptorError(
+            f"{field} must be a normalized repository path"
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class TaskDescriptor:
     schema_version: int
@@ -82,6 +137,12 @@ class TaskDescriptor:
     ) -> TaskDescriptor:
         config = config or load_project_config()
         profiles = profiles or load_gate_profiles()
+        unknown = sorted(set(data) - DESCRIPTOR_FIELDS)
+        if unknown:
+            raise TaskDescriptorError(
+                "unknown task descriptor field(s): "
+                + ", ".join(unknown)
+            )
         schema_version = data.get("schema_version")
         if schema_version != 2:
             raise TaskDescriptorError(
@@ -102,12 +163,21 @@ class TaskDescriptor:
                 "expected_base_sha",
             )
         }
+        if not TASK_ID_RE.fullmatch(values["task_id"]):
+            raise TaskDescriptorError(
+                "task_id must use letters, numbers, dot, underscore or hyphen"
+            )
         if values["base_branch"] != config.default_branch:
             raise TaskDescriptorError(
                 "base_branch must equal configured default branch"
             )
-        if not values["publish_branch"].startswith(
-            config.publish_prefix
+        if not _valid_ref(values["base_branch"]):
+            raise TaskDescriptorError("base_branch is not a safe Git ref")
+        if (
+            not values["publish_branch"].startswith(
+                config.publish_prefix
+            )
+            or not _valid_ref(values["publish_branch"])
         ):
             raise TaskDescriptorError(
                 "publish_branch must use configured publish prefix"
@@ -118,15 +188,25 @@ class TaskDescriptor:
             )
         if not SHA_RE.fullmatch(values["expected_base_sha"]):
             raise TaskDescriptorError(
-                "expected_base_sha must be a lowercase "
-                "40-character SHA"
+                "expected_base_sha must be a lowercase 40-character SHA"
             )
 
-        allowed_files = _strings(data, "allowed_files")
-        forbidden_patterns = _strings(
-            data,
-            "forbidden_patterns",
+        allowed_files = tuple(
+            _safe_repository_pattern(item, "allowed_files")
+            for item in _strings(data, "allowed_files")
         )
+        forbidden_patterns = tuple(
+            _safe_repository_pattern(item, "forbidden_patterns")
+            for item in _strings(data, "forbidden_patterns")
+        )
+        missing_protected = sorted(
+            set(config.protected) - set(forbidden_patterns)
+        )
+        if missing_protected:
+            raise TaskDescriptorError(
+                "forbidden_patterns must include repository protected paths: "
+                + ", ".join(missing_protected)
+            )
         required_changes = _strings(data, "required_changes")
         acceptance_notes = _strings(
             data,
@@ -178,12 +258,9 @@ class TaskDescriptor:
             )
 
         for path in allowed_files:
-            if (
-                auto_merge
-                and any(
-                    fnmatch.fnmatch(path, pattern)
-                    for pattern in config.protected
-                )
+            if auto_merge and any(
+                fnmatch.fnmatch(path, pattern)
+                for pattern in config.protected
             ):
                 raise TaskDescriptorError(
                     "automatic merge cannot modify protected paths"
@@ -211,7 +288,10 @@ class TaskDescriptor:
         )
 
 
-def load_task_descriptor(path: Path) -> TaskDescriptor:
+def load_task_descriptor(
+    path: Path,
+    root: Path = Path("."),
+) -> TaskDescriptor:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -222,4 +302,8 @@ def load_task_descriptor(path: Path) -> TaskDescriptor:
         raise TaskDescriptorError(
             "task descriptor root must be an object"
         )
-    return TaskDescriptor.from_mapping(data)
+    return TaskDescriptor.from_mapping(
+        data,
+        config=load_project_config(root),
+        profiles=load_gate_profiles(root),
+    )
