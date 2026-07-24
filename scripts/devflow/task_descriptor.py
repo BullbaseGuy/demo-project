@@ -79,7 +79,7 @@ class TaskDescriptor:
         profiles: (
             dict[str, tuple[tuple[str, ...], ...]] | None
         ) = None,
-    ) -> "TaskDescriptor":
+    ) -> TaskDescriptor:
         config = config or load_project_config()
         profiles = profiles or load_gate_profiles()
         schema_version = data.get("schema_version")

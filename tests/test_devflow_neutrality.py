@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 FORBIDDEN_PRODUCT_MARKERS = (
     "ashare" + "_f10",

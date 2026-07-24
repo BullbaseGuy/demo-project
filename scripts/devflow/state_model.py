@@ -127,7 +127,7 @@ class TaskState:
     control_issue_number: int | None
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any]) -> "TaskState":
+    def from_mapping(cls, data: dict[str, Any]) -> TaskState:
         schema_version = _require(data, "schema_version", int)
         if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
             raise StateError(

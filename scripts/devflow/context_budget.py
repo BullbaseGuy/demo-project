@@ -19,7 +19,7 @@ class ContextBudget:
     include_full_sop: bool = False
 
     @classmethod
-    def from_mapping(cls, value: object) -> "ContextBudget":
+    def from_mapping(cls, value: object) -> ContextBudget:
         if not isinstance(value, dict):
             raise ContextBudgetError(
                 "context_budget must be an object"
