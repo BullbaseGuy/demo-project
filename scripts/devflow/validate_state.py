@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from config import load_project_config
 from state_model import (
@@ -47,6 +47,7 @@ def validate_task_dir(
                 allow_checkout_branch
                 and branch
                 in {
+                    "",
                     config.default_branch,
                     state.working_branch,
                 }
@@ -59,12 +60,43 @@ def validate_task_dir(
     return {
         "task_id": state.task_id,
         "status": state.status,
+        "working_branch": state.working_branch,
+        "pull_request": data.get("pull_request"),
+        "current_stage": state.current_stage,
         "state_path": (
             task_dir / "task_state.yaml"
         ).as_posix(),
         "missing": missing,
         "errors": errors,
     }
+
+
+def safe_task_dir(
+    root: Path,
+    state_path: str,
+    task_id: str,
+) -> Path:
+    relative = PurePosixPath(state_path)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or relative.parts[:2] != ("docs", "implementation")
+        or relative.name != "task_state.yaml"
+        or len(relative.parts) != 4
+        or relative.parts[2] != task_id
+    ):
+        raise StateError(
+            f"unsafe canonical state_path for {task_id}: {state_path}"
+        )
+    task_dir = (root / Path(*relative.parts)).parent.resolve()
+    implementation = (
+        root / "docs/implementation"
+    ).resolve()
+    if implementation not in task_dir.parents:
+        raise StateError(
+            f"state_path escapes docs/implementation: {state_path}"
+        )
+    return task_dir
 
 
 def validate_active_tasks(
@@ -78,6 +110,10 @@ def validate_active_tasks(
         / "docs/implementation/ACTIVE_TASKS.yaml"
     )
     index = load_json_yaml(index_path)
+    if set(index) != {"schema_version", "tasks"}:
+        raise StateError(
+            "ACTIVE_TASKS accepts only schema_version and tasks"
+        )
     if index.get("schema_version") != 1:
         raise StateError(
             "ACTIVE_TASKS schema_version must equal 1"
@@ -89,6 +125,7 @@ def validate_active_tasks(
         )
     results = []
     ids = set()
+    paths = set()
     for entry in tasks:
         if not isinstance(entry, dict):
             raise StateError(
@@ -109,7 +146,16 @@ def validate_active_tasks(
             raise StateError(
                 f"state_path missing for {task_id}"
             )
-        task_dir = (root / state_path).parent
+        if state_path in paths:
+            raise StateError(
+                f"duplicate state_path: {state_path}"
+            )
+        paths.add(state_path)
+        task_dir = safe_task_dir(
+            root,
+            state_path,
+            task_id,
+        )
         result = validate_task_dir(
             task_dir,
             no_git=no_git,
@@ -119,6 +165,17 @@ def validate_active_tasks(
             result["errors"].append(
                 "task index and canonical state task_id differ"
             )
+        comparisons = {
+            "status": result["status"],
+            "branch": result["working_branch"],
+            "pull_request": result["pull_request"],
+            "current_stage": result["current_stage"],
+        }
+        for key, expected in comparisons.items():
+            if entry.get(key) != expected:
+                result["errors"].append(
+                    f"task index {key} differs from canonical state"
+                )
         results.append(result)
     errors = [
         error
