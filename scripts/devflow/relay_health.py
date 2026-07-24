@@ -32,36 +32,25 @@ def main() -> int:
     )
     args = parser.parse_args()
     config = load_project_config()
-    del args.confirmation, args.purpose
-    if (
-        args.mode == "paid_responses_probe"
-        or not config.relay_paid_probe
-    ):
-        if (
-            args.mode
-            == "paid_responses_probe"
-        ):
-            status = "BLOCKED"
-            reason = (
-                "PAID_PROBE_DISABLED_BY_"
-                "REPOSITORY_POLICY"
-            )
-        else:
-            status = "PASS"
-            reason = (
-                "CONFIGURATION_ONLY_"
-                "ZERO_REQUESTS"
-            )
+
+    if args.mode == "configuration_only":
+        status = "PASS"
+        reason = "CONFIGURATION_ONLY_ZERO_REQUESTS"
+    elif not config.relay_paid_probe:
+        status = "BLOCKED"
+        reason = "PAID_PROBE_DISABLED_BY_REPOSITORY_POLICY"
     else:
         status = "BLOCKED"
-        reason = (
-            "PAID_PROBE_REQUIRES_"
-            "SEPARATE_ACTIVATION"
-        )
+        reason = "PAID_PROBE_REQUIRES_SEPARATE_ACTIVATION"
+
     result = {
         "status": status,
         "reason_code": reason,
         "responses_requests_sent": 0,
+        "confirmation_provided": bool(
+            args.confirmation.strip()
+        ),
+        "purpose_provided": bool(args.purpose.strip()),
     }
     args.output.write_text(
         json.dumps(
