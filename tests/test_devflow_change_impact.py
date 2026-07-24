@@ -102,7 +102,11 @@ def test_deleted_file_is_returned_by_git_diff(
         cwd=tmp_path,
         text=True,
     ).strip()
-    assert changed_files(base, head) == ["protected.txt"] if False else True
+    assert changed_files(
+        base,
+        head,
+        tmp_path,
+    ) == ["protected.txt"]
     assert git_changed_files(
         base,
         head,
