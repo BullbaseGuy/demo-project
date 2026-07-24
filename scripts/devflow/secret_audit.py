@@ -49,6 +49,7 @@ def tracked_files(root: Path) -> list[Path]:
         output = subprocess.check_output(
             ["git", "ls-files", "-z"],
             cwd=root,
+            stderr=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError):
         return [
