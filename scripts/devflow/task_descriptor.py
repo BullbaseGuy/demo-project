@@ -14,6 +14,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 REF_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 RISK_CLASSES = {"low", "medium", "high"}
+GLOB_META = set("*?[]")
 DESCRIPTOR_FIELDS = {
     "schema_version",
     "task_id",
@@ -256,10 +257,22 @@ class TaskDescriptor:
             raise TaskDescriptorError(
                 "notify_completion requires auto_merge"
             )
+        if auto_merge and len(allowed_files) > 5:
+            raise TaskDescriptorError(
+                "automatic merge allows at most five explicit files"
+            )
+        if auto_merge and any(
+            any(character in path for character in GLOB_META)
+            for path in allowed_files
+        ):
+            raise TaskDescriptorError(
+                "automatic merge requires explicit files, not glob patterns"
+            )
 
         for path in allowed_files:
             if auto_merge and any(
-                fnmatch.fnmatch(path, pattern)
+                path == pattern
+                or fnmatch.fnmatch(path, pattern)
                 for pattern in config.protected
             ):
                 raise TaskDescriptorError(
