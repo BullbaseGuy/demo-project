@@ -6,10 +6,12 @@ coding agents.
 ## Required reading order
 
 1. `docs/process/README.md`;
-2. `docs/implementation/ACTIVE_TASKS.yaml`;
-3. the active task's `task_state.yaml`, `HANDOFF.md` and current `Wxx_plan.md`;
-4. the nearest scoped `AGENTS.md` for every changed path;
-5. the current branch, pull request and GitHub Checks.
+2. `.devflow/workflow-skills.lock.json` and, when installed, the locked
+   `.agents/workflow-skills/skills/workflow-router/SKILL.md`;
+3. `docs/implementation/ACTIVE_TASKS.yaml`;
+4. the active task's `task_state.yaml`, `HANDOFF.md` and current `Wxx_plan.md`;
+5. the nearest scoped `AGENTS.md` for every changed path;
+6. the current branch, pull request and GitHub Checks.
 
 ## Non-negotiable rules
 
@@ -32,3 +34,9 @@ coding agents.
 13. Valuable notifications are limited to `COMPLETED`, `INTERRUPTED`,
     `HUMAN_REQUIRED` and `SECURITY_BLOCKED`.
 14. `/ack` only confirms receipt; it never triggers repair or resume.
+15. Reusable workflow skills come only from the exact revision in
+    `.devflow/workflow-skills.lock.json`; branch names and abbreviated SHAs are invalid.
+16. This scaffold must not track copied `SKILL.md` bodies. Installed skills are generated
+    artifacts and the source repository remains authoritative.
+17. Before using or upgrading the skills, validate the lock, remote manifest, installer blob,
+    zero-model setting and compatibility workflow.
