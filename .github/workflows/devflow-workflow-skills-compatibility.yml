@@ -3,16 +3,22 @@ name: Devflow Workflow Skills Compatibility
 on:
   push:
     paths:
+      - "README.md"
+      - "AGENTS.md"
       - ".devflow/workflow-skills.lock.json"
       - "scripts/devflow/validate_workflow_skills_lock.py"
       - "tests/test_devflow_workflow_skills.py"
+      - "docs/process/README.md"
       - "docs/process/workflow-skills.md"
       - ".github/workflows/devflow-workflow-skills-compatibility.yml"
   pull_request:
     paths:
+      - "README.md"
+      - "AGENTS.md"
       - ".devflow/workflow-skills.lock.json"
       - "scripts/devflow/validate_workflow_skills_lock.py"
       - "tests/test_devflow_workflow_skills.py"
+      - "docs/process/README.md"
       - "docs/process/workflow-skills.md"
       - ".github/workflows/devflow-workflow-skills-compatibility.yml"
   workflow_dispatch:
