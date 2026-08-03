@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts/devflow/validate_workflow_skills_lock.py"
 SPEC = importlib.util.spec_from_file_location("workflow_skills_lock", MODULE_PATH)
 assert SPEC and SPEC.loader
