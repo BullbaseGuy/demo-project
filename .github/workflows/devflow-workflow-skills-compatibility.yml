@@ -1,0 +1,92 @@
+name: Devflow Workflow Skills Compatibility
+
+on:
+  push:
+    paths:
+      - ".devflow/workflow-skills.lock.json"
+      - "scripts/devflow/validate_workflow_skills_lock.py"
+      - "tests/test_devflow_workflow_skills.py"
+      - "docs/process/workflow-skills.md"
+      - ".github/workflows/devflow-workflow-skills-compatibility.yml"
+  pull_request:
+    paths:
+      - ".devflow/workflow-skills.lock.json"
+      - "scripts/devflow/validate_workflow_skills_lock.py"
+      - "tests/test_devflow_workflow_skills.py"
+      - "docs/process/workflow-skills.md"
+      - ".github/workflows/devflow-workflow-skills-compatibility.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-skills-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lock-and-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Validate immutable lock against remote manifest and installer
+        run: python scripts/devflow/validate_workflow_skills_lock.py
+
+      - name: Run compatibility unit tests
+        run: pytest -q tests/test_devflow_workflow_skills.py
+
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Download, verify, and run the exact pinned installer twice
+        shell: pwsh
+        run: |
+          $lock = Get-Content '.devflow/workflow-skills.lock.json' -Raw | ConvertFrom-Json
+          $installer = Join-Path $env:RUNNER_TEMP 'install-workflow-skills.ps1'
+          $url = "https://raw.githubusercontent.com/$($lock.source_repository)/$($lock.revision)/$($lock.installer_path)"
+          Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRedirection 3
+
+          function Get-GitBlobSha([byte[]]$Bytes) {
+            $prefix = [Text.Encoding]::ASCII.GetBytes("blob $($Bytes.Length)`0")
+            $combined = [byte[]]::new($prefix.Length + $Bytes.Length)
+            [Array]::Copy($prefix, 0, $combined, 0, $prefix.Length)
+            [Array]::Copy($Bytes, 0, $combined, $prefix.Length, $Bytes.Length)
+            $sha1 = [Security.Cryptography.SHA1]::Create()
+            try { return (($sha1.ComputeHash($combined) | ForEach-Object { $_.ToString('x2') }) -join '') }
+            finally { $sha1.Dispose() }
+          }
+
+          $actual = Get-GitBlobSha ([IO.File]::ReadAllBytes($installer))
+          if ($actual -ne $lock.installer_git_blob_sha) {
+            throw "Pinned installer blob mismatch: expected=$($lock.installer_git_blob_sha) actual=$actual"
+          }
+
+          $destination = Join-Path $env:RUNNER_TEMP 'consumer\.agents\workflow-skills'
+          $first = & $installer -Revision $lock.revision -Repository $lock.source_repository -Destination $destination
+          $second = & $installer -Revision $lock.revision -Repository $lock.source_repository -Destination $destination
+          if ($first -notmatch '^INSTALLED ') { throw "Unexpected first result: $first" }
+          if ($second -notmatch '^UNCHANGED ') { throw "Unexpected second result: $second" }
+          $installedLock = Get-Content (Join-Path $destination '.workflow-skills.lock.json') -Raw | ConvertFrom-Json
+          if ($installedLock.revision -ne $lock.revision) { throw 'Installed revision mismatch' }
+          if ($installedLock.installed_file_count -ne $lock.payload_file_count) { throw 'Payload count mismatch' }
