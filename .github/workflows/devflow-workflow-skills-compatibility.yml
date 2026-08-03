@@ -50,6 +50,14 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install -e ".[dev]"
 
+      - name: Report Ruff canonical import ordering
+        shell: bash
+        run: |
+          set +e
+          ruff check --fix tests/test_devflow_workflow_skills.py
+          git diff -- tests/test_devflow_workflow_skills.py
+          exit 0
+
       - name: Validate immutable lock against remote manifest and installer
         run: python scripts/devflow/validate_workflow_skills_lock.py
 
