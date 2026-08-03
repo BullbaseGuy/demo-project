@@ -6,9 +6,15 @@ repository.
 For new-repository creation, first-time configuration and the complete workflow
 diagrams, read [`../USAGE.md`](../USAGE.md).
 
+Reusable workflow skills are maintained only in `BullbaseGuy/chatgpt-workflow-skills`.
+This scaffold pins and validates them through [Pinned Workflow Skills](workflow-skills.md)
+without copying skill bodies.
+
 ## Architecture
 
 ```text
+Pinned Workflow Skills
+-> immutable consumer lock / router / shared operating rules
 ChatGPT Web Supervisor
 -> contract / plan / implementation / diagnosis / decisions
 GitHub Actions Executor
@@ -29,6 +35,7 @@ disabled and the permanent Codex workflow performs zero-model candidate review o
 | Layer | Location | Purpose |
 |---|---|---|
 | L0 | ChatGPT Project Instructions | startup and role boundaries |
+| L0.5 | `.devflow/workflow-skills.lock.json` | immutable cross-project skills revision and integrity metadata |
 | L1 | `/AGENTS.md` | repository-wide agent contract |
 | L2 | scoped `AGENTS.md` | directory rules |
 | L3 | `policies/` | durable policy |
@@ -39,6 +46,7 @@ disabled and the permanent Codex workflow performs zero-model candidate review o
 
 ## Policies
 
+- [Pinned Workflow Skills](workflow-skills.md)
 - [Execution contract](policies/execution-contract.md)
 - [State and documentation](policies/state-and-documentation.md)
 - [Monitoring and recovery](policies/monitoring-and-recovery.md)
