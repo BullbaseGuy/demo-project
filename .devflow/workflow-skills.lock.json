@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "source_repository": "BullbaseGuy/chatgpt-workflow-skills",
+  "revision": "22e10ad9fef0a0de828dfe0b48fafa1802928019",
+  "release_version": "1.0.0-rc.1",
+  "manifest_path": "release/skills-manifest.json",
+  "manifest_git_blob_sha": "e40d71b0ad6d7fb31de9499996ad9d514d4e8b8f",
+  "installer_path": "scripts/install-workflow-skills.ps1",
+  "installer_git_blob_sha": "506cae37e8feefaf0f74e3da6b6f4fcfffc81455",
+  "install_root": ".agents/workflow-skills",
+  "entry_skill": "skills/workflow-router/SKILL.md",
+  "payload_file_count": 28,
+  "tracked_skill_bodies": false,
+  "model_execution": "disabled",
+  "codex_invocations": 0
+}
