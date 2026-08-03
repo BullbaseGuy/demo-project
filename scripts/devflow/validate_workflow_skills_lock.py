@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import re
 import subprocess
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 from urllib.request import Request, urlopen
