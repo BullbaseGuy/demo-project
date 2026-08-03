@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts/devflow/validate_workflow_skills_lock.py"
