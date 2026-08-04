@@ -8,6 +8,8 @@
   [`docs/USAGE.md`](docs/USAGE.md)
 - 执行政策、Runbook 和模板索引：
   [`docs/process/README.md`](docs/process/README.md)
+- 固定版本的跨项目 ChatGPT Workflow Skills：
+  [`docs/process/workflow-skills.md`](docs/process/workflow-skills.md)
 - 启动第一个任务：
   [`docs/process/runbooks/start-new-task.md`](docs/process/runbooks/start-new-task.md)
 
@@ -16,7 +18,8 @@
 - ChatGPT Web 负责需求理解、合同、计划、实现、诊断、PR 和业务决策；
 - 仓库中的 `task_state.yaml` 是唯一 canonical task state；
 - GitHub Actions 负责状态、范围、安全、测试、有限恢复、通知和 Post-Merge；
-- 可选 Agent/Codex 执行面默认硬禁用，只保留零模型资格复核边界。
+- 可选 Agent/Codex 执行面默认硬禁用，只保留零模型资格复核边界；
+- 可复用技能由 `BullbaseGuy/chatgpt-workflow-skills` 单一维护，本仓库只保存不可变 consumer lock 和兼容验证，不复制技能正文。
 
 本仓库不包含产品实现。将产品代码放入 `src/` 或项目自己的目录，并在
 `.devflow/gate-profiles.json` 中定义由默认分支拥有的可信命令参数数组。
@@ -31,16 +34,17 @@
 | 分支删除 | dry-run |
 | 基础设施重试 | 有界且先分类 |
 | Secret-bearing 自动发布 | 不存在 |
-| 第三方 Actions | 固定完整 commit SHA |
+| Workflow Skills | 40 位 commit + manifest/installer Git blob 锁定 |
 
 ## 新项目最短路径
 
 1. 把本仓库设置为 GitHub Template Repository，或干净复制仓库内容；
 2. 修改 `.devflow/project.json` 中的用户、分支、路径和功能开关；
-3. 修改 `.devflow/gate-profiles.json`，加入产品安装、Lint、测试和必要 E2E；
-4. 启用 Issues，并配置 Actions 所需的读写权限；
-5. 用初始化 PR 跑通 Test、State Consistency 和 Upgrade Compatibility；
-6. 按任务模板创建第一个 Task Control Issue、canonical state 和 Draft PR。
+3. 审核 `.devflow/workflow-skills.lock.json`，需要升级时只修改为已审查的完整 commit 与对应 blob；
+4. 修改 `.devflow/gate-profiles.json`，加入产品安装、Lint、测试和必要 E2E；
+5. 启用 Issues，并配置 Actions 所需的读写权限；
+6. 用初始化 PR 跑通 Test、State Consistency、Workflow Skills Compatibility 和 Upgrade Compatibility；
+7. 按任务模板创建第一个 Task Control Issue、canonical state 和 Draft PR。
 
 完整步骤与图示见 [`docs/USAGE.md`](docs/USAGE.md)。
 
@@ -52,6 +56,7 @@ python -m compileall -q scripts tests
 python scripts/devflow/validate_docs.py
 python scripts/devflow/validate_workflows.py
 python scripts/devflow/validate_state.py --all-active --no-git
+python scripts/devflow/validate_workflow_skills_lock.py
 python scripts/devflow/upgrade_compatibility.py
 ruff check scripts tests
 pytest -q tests
@@ -62,6 +67,7 @@ pytest -q tests
 ```mermaid
 flowchart LR
     W[ChatGPT Web] --> S[Contract / Plan / State / PR]
+    K[Pinned Workflow Skills Lock] --> W
     S --> A[GitHub Actions]
     A --> G[State / Scope / Secret / Test Gates]
     G --> M[Reviewed Merge]
